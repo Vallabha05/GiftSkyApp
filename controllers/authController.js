@@ -4,7 +4,7 @@ const axios = require("axios");
 
 // controllers/authController.js
 
-const User = require('../models/User');
+const User = require('../models/user');
 
 // Generate random OTP (4 digits)
 const generateOTP = () => {
