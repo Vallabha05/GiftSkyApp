@@ -54,13 +54,13 @@ exports.signup = async (req, res) => {
     const otp = generateOTP();
 
     // Hash Password
-    const hashedPassword = await bcrypt.hash(password, 10);
+    // const hashedPassword = await bcrypt.hash(password, 10);
 
     // ================= CREATE USER FIRST =================
     const user = await User.create({
       name,
       phone_email,
-      password: hashedPassword,
+      password,
       otp,
     });
 
