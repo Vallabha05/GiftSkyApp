@@ -27,7 +27,9 @@ const isPhone = (value) => {
 exports.signup = async (req, res) => {
   try {
     const { name, phone_email, password } = req.body;
-    console.log(JSON.stringify(req.body))
+
+    console.log(JSON.stringify(req.body));
+
     // Validation
     if (!name || !phone_email || !password) {
       return res.status(400).json({
@@ -54,79 +56,7 @@ exports.signup = async (req, res) => {
     // Hash Password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // ================= SEND OTP =================
-
-    // ---------- EMAIL OTP ----------
-    if (isEmail(phone_email)) {
-
-      // Gmail Transporter
-      const transporter = nodemailer.createTransport({
-        host: "smtp.gmail.com",
-        port: 465,
-        secure: true,
-        auth: {
-          user: "vallabharajan2003@gmail.com", // Your Gmail
-          pass: process.env.EMAIL_PASS,   // Gmail App Password
-        },
-        connectionTimeout: 10000,
-        greetingTimeout: 10000,
-        socketTimeout: 10000,
-      });
-
-      // Send Mail
-      await transporter.sendMail({
-        from: "vallabharajan2003@gmail.com",
-        to: phone_email,
-        subject: "GiftSky OTP Verification",
-        html: `
-          <h2>Welcome to GiftSky</h2>
-          <p>Your OTP is:</p>
-          <h1>${otp}</h1>
-          <p>Valid for 5 minutes.</p>
-        `,
-      });
-
-      console.log(`📧 OTP sent to Email: ${phone_email}`);
-    }
-
-    // ---------- PHONE OTP ----------
-    else if (isPhone(phone_email)) {
-
-      const phone = `+91${phone_email}`;
-
-      await axios.post(
-        process.env.TWILIO_AXIOS,
-
-        new URLSearchParams({
-          To: phone,
-          From: "+17016454807",
-          Body: `Your GiftSky OTP is ${otp}`,
-        }),
-
-        {
-          auth: {
-            username: process.env.TWILIO_USERNAME,
-            password: process.env.TWILIO_PASSWORD,
-          },
-
-          headers: {
-            "Content-Type": "application/x-www-form-urlencoded",
-          },
-        }
-      );
-
-      console.log(`📱 OTP sent to Phone: ${phone}`);
-    }
-
-    // Invalid Input
-    else {
-      return res.status(400).json({
-        success: false,
-        message: "Enter valid Email or 10 digit Phone Number",
-      });
-    }
-
-    // ================= CREATE USER =================
+    // ================= CREATE USER FIRST =================
     const user = await User.create({
       name,
       phone_email,
@@ -134,19 +64,92 @@ exports.signup = async (req, res) => {
       otp,
     });
 
+    // ================= SEND OTP =================
+
+    try {
+      // ---------- EMAIL OTP ----------
+      if (isEmail(phone_email)) {
+        // Gmail Transporter
+        const transporter = nodemailer.createTransport({
+          host: "smtp.gmail.com",
+          port: 465,
+          secure: true,
+          auth: {
+            user: "vallabharajan2003@gmail.com",
+            pass: process.env.EMAIL_PASS,
+          },
+          connectionTimeout: 10000,
+          greetingTimeout: 10000,
+          socketTimeout: 10000,
+        });
+
+        // Send Mail
+        await transporter.sendMail({
+          from: "vallabharajan2003@gmail.com",
+          to: phone_email,
+          subject: "GiftSky OTP Verification",
+          html: `
+            <h2>Welcome to GiftSky</h2>
+            <p>Your OTP is:</p>
+            <h1>${otp}</h1>
+            <p>Valid for 5 minutes.</p>
+          `,
+        });
+
+        console.log(`📧 OTP sent to Email: ${phone_email}`);
+      }
+
+      // ---------- PHONE OTP ----------
+      else if (isPhone(phone_email)) {
+        const phone = `+91${phone_email}`;
+
+        await axios.post(
+          process.env.TWILIO_AXIOS,
+
+          new URLSearchParams({
+            To: phone,
+            From: "+17016454807",
+            Body: `Your GiftSky OTP is ${otp}`,
+          }),
+
+          {
+            auth: {
+              username: process.env.TWILIO_USERNAME,
+              password: process.env.TWILIO_PASSWORD,
+            },
+
+            headers: {
+              "Content-Type": "application/x-www-form-urlencoded",
+            },
+          }
+        );
+
+        console.log(`📱 OTP sent to Phone: ${phone}`);
+      }
+
+      // Invalid Input
+      else {
+        return res.status(400).json({
+          success: false,
+          message: "Enter valid Email or 10 digit Phone Number",
+        });
+      }
+    } catch (otpError) {
+      // OTP sending failed but user already created
+      console.error("OTP Sending Error:", otpError.message);
+    }
+
     // ================= RESPONSE =================
     res.status(201).json({
       success: true,
-      message: "Signup successful. OTP sent successfully.",
+      message: "Signup successful. User created successfully.",
       data: {
         userId: user.id,
         name: user.name,
         phone_email: user.phone_email,
       },
     });
-
   } catch (error) {
-
     console.error("Signup Error:", error);
 
     res.status(500).json({
