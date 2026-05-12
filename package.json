@@ -20,7 +20,8 @@
     "mysql2": "^3.22.3",
     "nodemailer": "^8.0.7",
     "resend": "^6.12.3",
-    "sequelize": "^6.37.8"
+    "sequelize": "^6.37.8",
+    "sib-api-v3-sdk": "^8.5.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.14"

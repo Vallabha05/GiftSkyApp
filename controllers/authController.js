@@ -1,10 +1,19 @@
 const bcrypt = require("bcryptjs");
-const nodemailer = require("nodemailer");
 const axios = require("axios");
+const SibApiV3Sdk = require("sib-api-v3-sdk");
 
 // controllers/authController.js
 
-const User = require('../models/user');
+const User = require("../models/user");
+
+// ================= BREVO API CONFIG =================
+
+const defaultClient = SibApiV3Sdk.ApiClient.instance;
+
+defaultClient.authentications["api-key"].apiKey =
+  process.env.BREVO_API_KEY;
+
+const apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
 
 // Generate random OTP (4 digits)
 const generateOTP = () => {
@@ -21,22 +30,34 @@ const isPhone = (value) => {
   return /^[0-9]{10}$/.test(value);
 };
 
-// ================= BREVO SMTP TRANSPORTER =================
-const createTransporter = () => {
-  console.log("SMTP USER:", process.env.BREVO_SMTP_USER);
-  console.log("SMTP PASS:", process.env.BREVO_SMTP_PASSWORD);
-  return nodemailer.createTransport({
-    host: 'smtp-relay.brevo.com',
-    port: 587,
-    secure: false, // TLS
-    auth: {
-      user: process.env.BREVO_SMTP_USER,
-      pass: process.env.BREVO_SMTP_PASSWORD,
+// ================= SEND EMAIL OTP =================
+
+const sendEmailOTP = async (email, otp, subjectText) => {
+  await apiInstance.sendTransacEmail({
+    sender: {
+      email: process.env.BREVO_FROM_EMAIL,
+      name: "GiftSky",
     },
+
+    to: [
+      {
+        email: email,
+      },
+    ],
+
+    subject: subjectText,
+
+    htmlContent: `
+      <h2>Welcome to GiftSky</h2>
+      <p>Your OTP is:</p>
+      <h1>${otp}</h1>
+      <p>Valid for 5 minutes.</p>
+    `,
   });
 };
 
 // ================= SIGNUP API =================
+
 exports.signup = async (req, res) => {
   try {
     const { name, phone_email, password } = req.body;
@@ -66,10 +87,7 @@ exports.signup = async (req, res) => {
     // Generate OTP
     const otp = generateOTP();
 
-    // Hash Password
-    // const hashedPassword = await bcrypt.hash(password, 10);
-
-    // ================= CREATE USER FIRST =================
+    // Create User
     const user = await User.create({
       name,
       phone_email,
@@ -82,19 +100,11 @@ exports.signup = async (req, res) => {
     try {
       // ---------- EMAIL OTP ----------
       if (isEmail(phone_email)) {
-        const transporter = createTransporter();
-
-        await transporter.sendMail({
-          from: `"GiftSky" <${process.env.BREVO_FROM_EMAIL}>`,
-          to: phone_email,
-          subject: 'GiftSky OTP Verification',
-          html: `
-            <h2>Welcome to GiftSky</h2>
-            <p>Your OTP is:</p>
-            <h1>${otp}</h1>
-            <p>Valid for 5 minutes.</p>
-          `,
-        });
+        await sendEmailOTP(
+          phone_email,
+          otp,
+          "GiftSky OTP Verification"
+        );
 
         console.log(`📧 OTP sent to Email: ${phone_email}`);
       }
@@ -135,16 +145,17 @@ exports.signup = async (req, res) => {
         });
       }
     } catch (otpError) {
-      // OTP sending failed but user already created
-      console.error("OTP Sending Error:", otpError.message);
+      console.error("OTP Sending Error:", otpError);
+
       return res.status(500).json({
-    success: false,
-    message: "OTP sending failed",
-    error: otpError.message,
-  });
+        success: false,
+        message: "OTP sending failed",
+        error: otpError.message,
+      });
     }
 
     // ================= RESPONSE =================
+
     res.status(201).json({
       success: true,
       message: "Signup successful. User created successfully.",
@@ -165,7 +176,8 @@ exports.signup = async (req, res) => {
   }
 };
 
-// LOGIN API
+// ================= LOGIN API =================
+
 exports.login = async (req, res) => {
   try {
     const { phone_email, password } = req.body;
@@ -174,11 +186,11 @@ exports.login = async (req, res) => {
     if (!phone_email || !password) {
       return res.status(400).json({
         success: false,
-        message: 'Phone/email and password are required',
+        message: "Phone/email and password are required",
       });
     }
 
-    // Find user by phone_email
+    // Find user
     const user = await User.findOne({
       where: { phone_email },
     });
@@ -186,7 +198,7 @@ exports.login = async (req, res) => {
     if (!user) {
       return res.status(401).json({
         success: false,
-        message: 'Invalid credentials',
+        message: "Invalid credentials",
       });
     }
 
@@ -196,13 +208,13 @@ exports.login = async (req, res) => {
     if (!isPasswordValid) {
       return res.status(401).json({
         success: false,
-        message: 'Invalid credentials',
+        message: "Invalid credentials",
       });
     }
 
     res.status(200).json({
       success: true,
-      message: 'Login successful',
+      message: "Login successful",
       data: {
         userId: user.id,
         name: user.name,
@@ -211,15 +223,17 @@ exports.login = async (req, res) => {
     });
   } catch (error) {
     console.error(error);
+
     res.status(500).json({
       success: false,
-      message: 'Login failed',
+      message: "Login failed",
       error: error.message,
     });
   }
 };
 
-// VERIFY OTP API
+// ================= VERIFY OTP API =================
+
 exports.verifyOTP = async (req, res) => {
   try {
     const { phone_email, otp } = req.body;
@@ -228,7 +242,7 @@ exports.verifyOTP = async (req, res) => {
     if (!phone_email || !otp) {
       return res.status(400).json({
         success: false,
-        message: 'Phone/Email and OTP are required',
+        message: "Phone/Email and OTP are required",
       });
     }
 
@@ -240,7 +254,7 @@ exports.verifyOTP = async (req, res) => {
     if (!user) {
       return res.status(404).json({
         success: false,
-        message: 'User not found',
+        message: "User not found",
       });
     }
 
@@ -248,17 +262,17 @@ exports.verifyOTP = async (req, res) => {
     if (user.otp != otp) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid OTP',
+        message: "Invalid OTP",
       });
     }
 
-    // Clear OTP after verification
+    // Clear OTP
     user.otp = null;
     await user.save();
 
     res.status(200).json({
       success: true,
-      message: 'OTP verified successfully',
+      message: "OTP verified successfully",
       data: {
         userId: user.id,
         name: user.name,
@@ -267,18 +281,19 @@ exports.verifyOTP = async (req, res) => {
     });
   } catch (error) {
     console.error(error);
+
     res.status(500).json({
       success: false,
-      message: 'OTP verification failed',
+      message: "OTP verification failed",
       error: error.message,
     });
   }
 };
 
-// RESEND OTP API
+// ================= RESEND OTP API =================
+
 exports.resendOTP = async (req, res) => {
   try {
-
     const { phone_email } = req.body;
 
     // Validation
@@ -308,30 +323,19 @@ exports.resendOTP = async (req, res) => {
     user.otp = otp;
     await user.save();
 
-    // ================= SEND OTP =================
-
     // ---------- EMAIL OTP ----------
     if (isEmail(phone_email)) {
-      const transporter = createTransporter();
-
-      await transporter.sendMail({
-        from: `"GiftSky" <${process.env.BREVO_FROM_EMAIL}>`,
-        to: phone_email,
-        subject: 'GiftSky OTP Resend',
-        html: `
-          <h2>GiftSky OTP Verification</h2>
-          <p>Your new OTP is:</p>
-          <h1>${otp}</h1>
-          <p>Valid for 5 minutes.</p>
-        `,
-      });
+      await sendEmailOTP(
+        phone_email,
+        otp,
+        "GiftSky OTP Resend"
+      );
 
       console.log(`📧 OTP resent to Email: ${phone_email}`);
     }
 
     // ---------- PHONE OTP ----------
     else if (isPhone(phone_email)) {
-
       const phone = `+91${phone_email}`;
 
       await axios.post(
@@ -366,14 +370,12 @@ exports.resendOTP = async (req, res) => {
       });
     }
 
-    // ================= RESPONSE =================
+    // Response
     res.status(200).json({
       success: true,
       message: "OTP resent successfully",
     });
-
   } catch (error) {
-
     console.error("Resend OTP Error:", error);
 
     res.status(500).json({
@@ -384,7 +386,8 @@ exports.resendOTP = async (req, res) => {
   }
 };
 
-// GOOGLE SIGN IN API
+// ================= GOOGLE SIGN IN API =================
+
 exports.googleSignIn = async (req, res) => {
   try {
     const { name, phone_email, googleId } = req.body;
@@ -395,20 +398,19 @@ exports.googleSignIn = async (req, res) => {
     if (!name || !phone_email || !googleId) {
       return res.status(400).json({
         success: false,
-        message: 'Name, email, and Google ID are required',
+        message: "Name, email, and Google ID are required",
       });
     }
 
-    // Check if user already exists
+    // Check Existing User
     let user = await User.findOne({
-      where: { phone_email }
+      where: { phone_email },
     });
 
     if (user) {
-      // User exists, just return their data
       return res.status(200).json({
         success: true,
-        message: 'Login successful',
+        message: "Login successful",
         data: {
           userId: user.id,
           name: user.name,
@@ -417,7 +419,7 @@ exports.googleSignIn = async (req, res) => {
       });
     }
 
-    // Create new user for Google Sign In
+    // Create User
     user = await User.create({
       name,
       phone_email,
@@ -427,7 +429,7 @@ exports.googleSignIn = async (req, res) => {
 
     res.status(201).json({
       success: true,
-      message: 'Account created and logged in via Google',
+      message: "Account created and logged in via Google",
       data: {
         userId: user.id,
         name: user.name,
@@ -436,9 +438,10 @@ exports.googleSignIn = async (req, res) => {
     });
   } catch (error) {
     console.error(error);
+
     res.status(500).json({
       success: false,
-      message: 'Google Sign In failed',
+      message: "Google Sign In failed",
       error: error.message,
     });
   }
