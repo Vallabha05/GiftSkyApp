@@ -11,8 +11,6 @@ const generateOTP = () => {
   return Math.floor(1000 + Math.random() * 9000);
 };
 
-//SIGNUP API
-
 // Check email
 const isEmail = (value) => {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
@@ -21,6 +19,21 @@ const isEmail = (value) => {
 // Check phone number
 const isPhone = (value) => {
   return /^[0-9]{10}$/.test(value);
+};
+
+// ================= BREVO SMTP TRANSPORTER =================
+const createTransporter = () => {
+  console.log("SMTP USER:", process.env.BREVO_SMTP_USER);
+  console.log("SMTP PASS:", process.env.BREVO_SMTP_PASSWORD);
+  return nodemailer.createTransport({
+    host: 'smtp-relay.brevo.com',
+    port: 587,
+    secure: false, // TLS
+    auth: {
+      user: process.env.BREVO_SMTP_USER,
+      pass: process.env.BREVO_SMTP_PASSWORD,
+    },
+  });
 };
 
 // ================= SIGNUP API =================
@@ -69,25 +82,12 @@ exports.signup = async (req, res) => {
     try {
       // ---------- EMAIL OTP ----------
       if (isEmail(phone_email)) {
-        // Gmail Transporter
-        const transporter = nodemailer.createTransport({
-          host: "smtp.gmail.com",
-          port: 465,
-          secure: true,
-          auth: {
-            user: "vallabharajan2003@gmail.com",
-            pass: process.env.EMAIL_PASS,
-          },
-          connectionTimeout: 10000,
-          greetingTimeout: 10000,
-          socketTimeout: 10000,
-        });
+        const transporter = createTransporter();
 
-        // Send Mail
         await transporter.sendMail({
-          from: "vallabharajan2003@gmail.com",
+          from: `"GiftSky" <${process.env.BREVO_FROM_EMAIL}>`,
           to: phone_email,
-          subject: "GiftSky OTP Verification",
+          subject: 'GiftSky OTP Verification',
           html: `
             <h2>Welcome to GiftSky</h2>
             <p>Your OTP is:</p>
@@ -137,6 +137,11 @@ exports.signup = async (req, res) => {
     } catch (otpError) {
       // OTP sending failed but user already created
       console.error("OTP Sending Error:", otpError.message);
+      return res.status(500).json({
+    success: false,
+    message: "OTP sending failed",
+    error: otpError.message,
+  });
     }
 
     // ================= RESPONSE =================
@@ -231,7 +236,7 @@ exports.verifyOTP = async (req, res) => {
     const user = await User.findOne({
       where: { phone_email },
     });
- 
+
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -307,19 +312,12 @@ exports.resendOTP = async (req, res) => {
 
     // ---------- EMAIL OTP ----------
     if (isEmail(phone_email)) {
-
-      const transporter = nodemailer.createTransport({
-        service: "gmail",
-        auth: {
-          user: "vallabharajan2003@gmail.com",
-          pass: process.env.EMAIL_PASS,
-        },
-      });
+      const transporter = createTransporter();
 
       await transporter.sendMail({
-        from: "vallabharajan2003@gmail.com",
+        from: `"GiftSky" <${process.env.BREVO_FROM_EMAIL}>`,
         to: phone_email,
-        subject: "GiftSky OTP Resend",
+        subject: 'GiftSky OTP Resend',
         html: `
           <h2>GiftSky OTP Verification</h2>
           <p>Your new OTP is:</p>
@@ -390,9 +388,9 @@ exports.resendOTP = async (req, res) => {
 exports.googleSignIn = async (req, res) => {
   try {
     const { name, phone_email, googleId } = req.body;
-    
+
     console.log(JSON.stringify(req.body));
-    
+
     // Validation
     if (!name || !phone_email || !googleId) {
       return res.status(400).json({
@@ -402,8 +400,8 @@ exports.googleSignIn = async (req, res) => {
     }
 
     // Check if user already exists
-    let user = await User.findOne({ 
-      where: { phone_email } 
+    let user = await User.findOne({
+      where: { phone_email }
     });
 
     if (user) {
